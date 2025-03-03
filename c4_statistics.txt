@@ -1,0 +1,417 @@
+1. Lines of Code (LOC)
+
+Lizard Output (NLOC):
+
+next(): 85 lines
+expr(): 163 lines
+stmt(): 47 lines
+main(): 181 lines
+-----------------
+Total (file): 504 NLOC
+
+SourceMonitor:
+
+Total Lines: 721
+Statements: 908
+Functions: 4
+
+Differences in counts arise from how each tool/estimate treats blank lines, braces‐only lines, or preprocessor directives.
+
+----------------------------------------------------------------------------------
+
+2. Cyclomatic Complexity per Function
+
+Cyclomatic Complexity (CC) is loosely estimated by counting the number of decision points (if, while, for, else if, etc.) plus 
+
+next()
+Contains one main while (*p) loop plus ~20 if/else if checks for different token types.
+
+expr(int lev)
+Several if/else if blocks for primary expressions, plus the while (tk >= lev) loop for operator precedence, inside of which there are many if checks for each operator.
+
+stmt()
+Handles if, while, return, { ... } blocks, plus a fallback for expression statements.
+
+main()
+Handles command-line option parsing (several ifs), then a while (1) loop implementing a virtual machine with a large switch-like chain of if (i == ...) else if (i == ...) for each opcode.
+
+Lizard Output (CCN):
+
+next(): 85
+expr(): 91
+stmt(): 15
+main(): 100
+Average CCN: 72.8 (across 4 functions)
+
+SourceMonitor:
+
+Maximum Complexity: 110
+Average Complexity: 82.75
+
+**Lizard and SourceMonitor measure complexity more aggressively; they may be counting additional decision points or parsing certain constructs differently.
+
+----------------------------------------------------------------------------------
+
+3. Number of Functions and Their Sizes
+Total Functions: 4 “major” functions in user code:
+
+next(): ~80–85 LOC
+expr(): ~120–163 LOC
+stmt(): ~50 LOC
+main(): ~180–200 LOC
+
+Each function is quite large because c4 does all parsing, code generation, and the virtual machine execution in a single file.
+
+----------------------------------------------------------------------------------
+
+4. Global Variables and Their Usage
+C4 uses a small set of global variables to share compiler state among next(), expr(), stmt(), and main():
+
+
+char *p, *lp, *data;
+int *e, *le, *id, *sym;
+int tk, ival, ty, loc, line, src, debug;
+----------------------------------------
+Count: 14 globals (p, lp, data, e, le, id, sym, tk, ival, ty, loc, line, src, debug).
+
+Roles:
+
+- p, lp: Pointers into the source buffer, used by next() for lexing.
+
+- data: Points to free space for string literals/global data.
+
+- e, le: E is the array of emitted instructions (the “text” segment); le is a pointer boundary.
+
+- sym, id: The symbol table (sym) and currently processed identifier (id).
+
+- tk, ival, ty: Shared parser state: current token code, numeric value, and expression type.
+
+- loc, line: Local offset tracking and current line number.
+
+- src, debug: Flags controlling verbose output and debugging.
+
+All four major functions read or modify some subset of these globals.
+
+----------------------------------------------------------------------------------
+
+5. Number of Unique Tokens and Their Frequency
+
+Lexer/Token Kinds: The compiler supports:
+
+Keywords: char, else, enum, if, int, return, sizeof, while
+
+Operators: =, ==, +, ++, -, --, *, /, %, |, ||, &, &&, <, <=, >, >=, ^, ~, !, ? :, [ ]
+
+Identifiers, numeric constants, string/char literals, special tokens for the mini-preprocessor #.
+
+Built-in VM opcodes LEA, IMM, JMP, ....
+
+
+- at least 30+ distinct keywords/operators in the tiny language’s grammar. (char, enum, if, while, return, ==, +=)
+- 40+ vm opcodes (counting from LEA to EXIT).
+- Many repeated uses of tokens like if, while
+
+Hence the unique token count is easily 70+ if you include all language tokens, opcodes, and recognized strings. Frequency varies like tk == '(' appears often in expr() and stmt(), and the main switch-like logic in main() checks each opcode exactly once per iteration of the VM.
+
+----------------------------------------------------------------------------------
+
+6. Number of Branches, Loops, and Nesting Levels
+
+Branches: Primarily via if(...) checks in next(), expr(), stmt(), and the large opcode dispatch in main(). 
+Combined, there are almost 60+ branch points across the four functions.
+
+Loops:
+next() has a while (tk = *p) to advance through the source code as a vm.
+expr() uses while (tk >= lev) to parse operators by precedence.
+stmt() has loops for block parsing (while (tk != '}' )).
+main() has the infinite while(1) for the VM, plus smaller loops for reading input files, etc.
+
+Overall, ~6 main loops in the entire program.
+
+Nesting Levels: Typical control structures go 2–3 levels deep (if + while inside an if), but do not exceed ~4 levels in the code.
+
+----------------------------------------------------------------------------------
+
+7. Memory Usage Patterns
+
+Static/Global Allocation:
+
+Global arrays/pointers (sym, e, data, sp) are dynamically allocated once in main() using malloc(poolsz), each receiving a chunk of ~256 KB.
+The compiler reuses these areas for symbol table, generated instructions, static/global data space, and the simulated stack.
+
+Stack Usage:
+
+The actual “C stack” usage is moderate just typical function locals.
+
+The virtual machine uses a manually allocated stack (sp = malloc(poolsz)) for running compiled code.
+
+Heap Usage:
+
+Minimal or no complex dynamic allocation beyond those big blocks.
+
+During self-compilation or normal usage, c4 calls malloc to allocate:
+
+- Symbol table region
+- Instruction buffer
+- Data region
+- Virtual machine stack
+- The code also provides minimal stubs for malloc/free to the compiled programs like the opcodes MALC and FREE
+
+
+No complex memory management is done beyond these big allocations and direct pointer arithmetic.
+
+
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+
+
+Summary of Findings
+
+Single‐File Design, High Complexity : C4 is packed into one ~500–700 line file with four very large functions, each handling major compiler/VM tasks.
+
+High Cyclomatic Complexity: The combination of many if/else chains (for tokens, operators, opcodes) and multiple nested loops leads to very high CCN values (80+ to 100) in Lizard’s analysis.
+
+Global State: Fourteen global variables store all parser, lexer, code‐emission, and debugging data. Each function accesses/modifies some of this shared state.
+
+Lots of Tokens/Opcodes: A minimal but complete subset of C keywords and ~40 VM opcodes push the unique token count well above 70.
+
+Branches and Loops: ~60+ conditional branches spread across the code; 6 main loops, often nested 2–3 levels deep.
+
+Memory: C4 allocates large static regions such as symbol table, code buffer, data, stack-via malloc and uses straightforward pointer arithmetic. Valgrind shows no leaks.
+
+All-in-One Self‐Hosting: Despite its small size, C4 implements a lexer, parser, code generator, and bytecode interpreter in one file, capable of compiling itself.
+
+
+
+
+================================================
+Lizard:
+================================================
+     NLOC    CCN   token  PARAM  length  location  
+------------------------------------------------
+      85     85   1030      0     109 	next@59-167@c4.c
+     163     91   2403      1     229 	expr@173-401@c4.c
+      47     15    395      0      66 	stmt@405-470@c4.c
+     181    100   2214      2     249 	main@476-724@c4.c
+1 file analyzed.
+==============================================================
+NLOC    Avg.NLOC  AvgCCN  Avg.token  function_cnt    file
+--------------------------------------------------------------
+ 504     119.0    72.8     1510.5         4  	     c4.c
+
+===========================================================================================================
+!!!! Warnings (cyclomatic_complexity > 15 or length > 1000 or nloc > 1000000 or parameter_count > 100) !!!!
+================================================
+  NLOC    CCN   token  PARAM  length  location  
+------------------------------------------------
+      85     85   1030      0     109 next@59-167@c4.c
+     163     91   2403      1     229 expr@173-401@c4.c
+     181    100   2214      2     249 main@476-724@c4.c
+==========================================================================================
+Total nloc   Avg.NLOC  AvgCCN  Avg.token   Fun Cnt  Warning cnt   Fun Rt   nloc Rt
+------------------------------------------------------------------------------------------
+    504       119.0     72.8     1510.5        4         3     	   0.75    0.90
+
+
+
+
+
+================================================
+Valgrind:
+
+Reports 0 memory leaks and 0 errors. Only a single malloc/free pair is used in a typical run.
+================================================
+==15388== Memcheck, a memory error detector
+==15388== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
+==15388== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
+==15388== Command: ./test.out
+==15388== 
+usage: c4 [-s] [-d] file ...
+==15388== 
+==15388== HEAP SUMMARY:
+==15388==     in use at exit: 0 bytes in 0 blocks
+==15388==   total heap usage: 1 allocs, 1 frees, 1,024 bytes allocated
+==15388== 
+==15388== All heap blocks were freed -- no leaks are possible
+==15388== 
+==15388== For lists of detected and suppressed errors, rerun with: -s
+==15388== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+
+
+
+
+
+================================================
+clang static analyzer:
+
+Mostly warns about “assignment in condition” (if (x = ...) vs. ==) and the non‐standard main signature (due to #define int long long).
+No critical bugs found.
+================================================
+scan-build: Using '/usr/lib/llvm-18/bin/clang' for static analysis
+c4.c:70:13: warning: using the result of an assignment as a condition without parentheses [-Wparentheses]
+   70 |   while (tk = *p) {
+      |          ~~^~~
+c4.c:70:13: note: place parentheses around the assignment to silence this warning
+   70 |   while (tk = *p) {
+      |             ^   
+      |          (      )
+c4.c:70:13: note: use '==' to turn this assignment into an equality comparison
+   70 |   while (tk = *p) {
+      |             ^
+      |             ==
+c4.c:114:14: warning: using the result of an assignment as a condition without parentheses [-Wparentheses]
+  114 |                   if (ival = tk - '0') { while (*p >= '0' && *p <= '9') ival = ival * 10 + *p++ - '0'; }
+      |                       ~~~~^~~~~~~~~
+c4.c:114:14: note: place parentheses around the assignment to silence this warning
+  114 |                   if (ival = tk - '0') { while (*p >= '0' && *p <= '9') ival = ival * 10 + *p++ - '0'; }
+      |                            ^         
+      |                       (              )
+c4.c:114:14: note: use '==' to turn this assignment into an equality comparison
+  114 |                   if (ival = tk - '0') { while (*p >= '0' && *p <= '9') ival = ival * 10 + *p++ - '0'; }
+      |                            ^
+      |                            ==
+c4.c:476:1: warning: return type of 'main' is not 'int' [-Wmain-return-type]
+  476 | int main(int argc, char **argv)
+      | ^
+c4.c:16:13: note: expanded from macro 'int'
+   16 | #define int long long //forces all int refrences to be 64 bit
+      |             ^
+c4.c:476:1: note: change return type to 'int'
+  476 | int main(int argc, char **argv)
+      | ^~~
+      | int
+c4.c:16:13: note: expanded from macro 'int'
+   16 | #define int long long //forces all int refrences to be 64 bit
+      |             ^
+c4.c:476:5: error: first parameter of 'main' (argument count) must be of type 'int'
+  476 | int main(int argc, char **argv)
+      |     ^
+3 warnings and 1 error generated.
+scan-build: Analysis run complete.
+scan-build: Removing directory '/home/joud/projects/c4/scan-build-output/2025-02-24-085554-20153-1' because it contains no reports.
+scan-build: No bugs found.
+
+
+
+
+
+================================================
+cpp check:
+
+“Missing system headers” (harmless for analysis) and style warnings about variable scope/shadowing.
+================================================
+Checking c4.c ...
+c4.c:9:0: information: Include file: <stdio.h> not found. Please note: Cppcheck does not need standard library headers to get proper results. [missingIncludeSystem]
+#include <stdio.h>
+^
+c4.c:10:0: information: Include file: <stdlib.h> not found. Please note: Cppcheck does not need standard library headers to get proper results. [missingIncludeSystem]
+#include <stdlib.h>
+^
+c4.c:11:0: information: Include file: <memory.h> not found. Please note: Cppcheck does not need standard library headers to get proper results. [missingIncludeSystem]
+#include <memory.h>
+^
+c4.c:12:0: information: Include file: <unistd.h> not found. Please note: Cppcheck does not need standard library headers to get proper results. [missingIncludeSystem]
+#include <unistd.h>
+^
+c4.c:13:0: information: Include file: <fcntl.h> not found. Please note: Cppcheck does not need standard library headers to get proper results. [missingIncludeSystem]
+#include <fcntl.h>
+^
+c4.c:484:11: style: The scope of the variable 'bt' can be reduced. [variableScope]
+  int fd, bt, ty, poolsz, *idmain;
+          ^
+c4.c:484:15: style: Local variable 'ty' shadows outer variable [shadowVariable]
+  int fd, bt, ty, poolsz, *idmain;
+              ^
+c4.c:29:5: note: Shadowed declaration
+    ty,       // current expression type
+    ^
+c4.c:484:15: note: Shadow variable
+  int fd, bt, ty, poolsz, *idmain;
+              ^
+nofile:0:0: information: Active checkers: 106/592 (use --checkers-report=<filename> to see details) [checkersReport]
+
+
+
+================================================
+source monitor:
+================================================
+A single‐file “Baseline” checkpoint dated 24 Feb 2025 with these metrics:
+
+Files: 1
+Total Lines: 721
+Statements: 908
+Percent Branches: 31.1%
+Percent Comments: 15.1%
+Functions: 4
+Average Statements per Function: 223.0
+Maximum Complexity: 110
+Maximum Depth: 7
+Average Depth: 2.93
+Average Complexity: 82.75
+
+its one relatively large file with four functions that are each quite large (over 200 statements on average). The maximum complexity is 110, and average complexity is 82.75, indicating the code is fairly complex. The 15.1% comment ratio is the proportion of lines marked as comments, and the 31.1% branches stat reflects how many statements are branching (e.g., if, while, case), which can also contribute to complexity.
+
+
+
+================================================
+ltrace:
+
+Shows a simple run that prints usage and exits. System calls confirm minimal I/O and memory usage.
+================================================
+__monstartup(0x581963cbb000, 0x581963cc04bd, 0x7ffc90d62d28, 0x581963cbc000) = 0
+__cxa_atexit(0x7ff487d2d1d0, 0, 0x581963cc3008, 0x7ff487ce29db)      = 0
+puts("usage: c4 [-s] [-d] file ..."usage: c4 [-s] [-d] file ...
+)                                 = 29
++++ exited (status 255) +++
+
+
+SYS_brk(0)                                                           = 0x5c28a2221000
+SYS_mmap(0, 8192, 3, 34)                                             = 0x728159163000
+SYS_access("/etc/ld.so.preload", 04)                                 = -2
+SYS_openat(0xffffff9c, 0x72815919938f, 0x80000, 0)                   = 3
+SYS_fstat(3, 0x7fff31b6bfb0)                                         = 0
+SYS_mmap(0, 0xebab, 1, 2)                                            = 0x728159154000
+SYS_close(3)                                                         = 0
+SYS_openat(0xffffff9c, 0x728159163140, 0x80000, 0)                   = 3
+SYS_read(3, "\177ELF\002\001\001\003", 832)                          = 832
+SYS_pread(3, 0x7fff31b6be00, 784, 64)                                = 784
+SYS_fstat(3, 0x7fff31b6c080)                                         = 0
+SYS_pread(3, 0x7fff31b6bcd0, 784, 64)                                = 784
+SYS_mmap(0, 0x211d90, 1, 2050)                                       = 0x728158e00000
+SYS_mmap(0x728158e28000, 0x188000, 5, 2066)                          = 0x728158e28000
+SYS_mmap(0x728158fb0000, 0x4f000, 1, 2066)                           = 0x728158fb0000
+SYS_mmap(0x728158fff000, 0x6000, 3, 2066)                            = 0x728158fff000
+SYS_mmap(0x728159005000, 0xcd90, 3, 50)                              = 0x728159005000
+SYS_close(3)                                                         = 0
+SYS_mmap(0, 0x3000, 3, 34)                                           = 0x728159151000
+SYS_arch_prctl(4098, 0x728159151740, 0xffff8d7ea6eadf30, 34)         = 0
+SYS_set_tid_address(0x728159151a10, 0x728159151740, 0x7281591a40c8, 34) = 0x6957
+SYS_set_robust_list(0x728159151a20, 24, 0x7281591a40c8, 34)          = 0
+SYS_334(0x728159152060, 32, 0, 0x53053053)                           = 0
+SYS_mprotect(0x728158fff000, 16384, 1)                               = 0
+SYS_mprotect(0x5c2862bec000, 4096, 1)                                = 0
+SYS_mprotect(0x7281591a1000, 8192, 1)                                = 0
+SYS_prlimit64(0, 3, 0, 0x7fff31b6cbd0)                               = 0
+SYS_munmap(0x728159154000, 60331)                                    = 0
+__monstartup(0x5c2862be5000, 0x5c2862bea4bd, 0x7fff31b6cfe8, 0x5c2862be6000 <unfinished ...>
+SYS_318(0x72815900a178, 8, 1, 0x7fff31b6cbd0)                        = 8
+SYS_brk(0)                                                           = 0x5c28a2221000
+SYS_brk(0x5c28a2242000)                                              = 0x5c28a2242000
+SYS_rt_sigaction(27, 0x7fff31b6ccb0, 0x7fff31b6cd50, 8)              = 0
+SYS_setitimer(2, 0x7fff31b6ce00, 0x72815900b180, 8)                  = 0
+<... __monstartup resumed> )                                         = 0
+__cxa_atexit(0x728158f2d1d0, 0, 0x5c2862bed008, 0x728158ee29db)      = 0
+puts("usage: c4 [-s] [-d] file ..." <unfinished ...>
+SYS_fstat(1, 0x7fff31b6cc70)                                         = 0
+SYS_write(1, "usage: c4 [-s] [-d] file ...\n", 29usage: c4 [-s] [-d] file ...
+)                   = 29
+<... puts resumed> )                                                 = 29
+SYS_setitimer(2, 0x72815900b180, 0, 1)                               = 0
+SYS_rt_sigaction(27, 0x7fff31b6ccf0, 0, 8)                           = 0
+SYS_openat(0xffffff9c, 0x728158fce4eb, 0xa0241, 438)                 = 3
+SYS_write(3, "gmon\001", 20)                                         = 20
+SYS_writev(3, 0x7fff31b6c8c0, 3)                                     = 10889
+SYS_close(3)                                                         = 0
+SYS_exit_group(-1 <no return ...>
++++ exited (status 255) +++

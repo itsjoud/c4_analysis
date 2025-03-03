@@ -1,0 +1,66 @@
+Conceptual Questions:
+
+1. What is the purpose of the next() function, and how does it contribute to the compilation
+process?
+
+- The next() function is essentially the lexer or tokenizer for this tiny compiler. It reads characters from the source p, identifies tokens (identifiers, numbers, string literals, operators), sets the global tk variable to the kind of token recognized, and if necessary sets additional globals like ival for numeric literals. next() is a simple lexical analyzer that converts raw text into tokens for parsing.
+
+How it contributes to compilation:
+by converting the raw text into a stream of tokens, next() provides the parser (the rest of c4’s functions) with discrete symbols. This is crucial for parsing expressions, statements, and declarations. Essentially, every time the parser needs the next token, it calls next(). Without it, the rest of the code would not be able to differentiate keywords, variables, numbers, operators
+
+-----------------------------------------------------------------------------------------------------------------------------
+
+2. How does C4 handle symbol resolution (e.g., variables, functions)?
+
+C4 handles symbol resolution using a single symbol table (sym) that stores information about variables, functions, system calls, and enumerations. Each symbol is represented by multiple fields, including its  name, token type, hash, storage class (local, global, function, or system call), data type (char, int, pointer), and value (memory address or function entry point) 
+
+When the lexer (`next()`) encounters an identifier, it computes a  hash  and searches the symbol table for an existing entry; if not found, a new entry is created. During  parsing , the compiler assigns  class, type, and memory locations : global variables are stored in the  data segment , local variables in the  stack frame , and functions are assigned an entry point in the  instruction array  
+
+During  code generation , the compiler determines how to access each symbol:  local variables  use `LEA` (load effective address) and `LI/LC` (load value),  global variables  use `IMM` (immediate address) followed by a load instruction, and  functions  generate `JSR` (jump to subroutine) for user-defined functions or predefined system calls. 
+
+Since C4 is a  single-pass compiler , it resolves all symbols  dynamically during parsing , eliminating the need for a separate linking phase and ensuring efficient, direct code generation.
+
+-----------------------------------------------------------------------------------------------------------------------------
+
+3. What are the limitations of C4 as a compiler? What features of C does it not support?
+
+C4 implements only a tiny subset of C. Some of the unsupported features include:
+
+No struct, union, typedef, or float/double support.
+Only char, int, and pointers to them.
+Limited control statements:
+	Only if, while, and return are supported.
+Limited declarations:
+	No separate function prototypes.
+	No complex pointer or array declarators besides the * usage in pointer declarations and indexing via [...].
+Minimal preprocessor:
+	The code merely ignores lines starting with #. It does not handle macros, #include, or any other preprocessor directives.
+No real type checking:
+	C4 does not fully implement all usual C type promotions or function argument type-checking.
+Minimal standard library:
+	Only has built-ins (treated as Sys calls) for open, read, close, printf, malloc, free, memset, memcmp, exit.
+
+C4 is more of a bare-bones compiler than a production C compiler. It is carefully limited to just enough features to compile itself and some small programs.
+
+-----------------------------------------------------------------------------------------------------------------------------
+
+4. How does C4 achieve self-hosting (i.e., compiling itself)? What are the implications of this
+design?
+
+Self-hosting means that C4 is capable of compiling its own source code (the file c4.c), using only the features that it itself implements. The design is:
+
+Robert Swierczek ensured that c4.c uses only:
+char, int, pointer types
+Control flow via if, while, return
+Basic expressions and minimal standard library calls
+Compile once with an external compiler to produce the first binary.
+For example, compiling c4.c with gcc c4.c -o c4.
+Use the resulting binary (c4) to recompile c4.c into a new c4 binary.
+This confirms that the compiler can compile its own source.
+
+Implications
+Because C4 can self-host, it proves that the subset of C it implements is sufficient to represent a compiler for itself.
+It also means C4 is very minimal and does not rely on features it does not implement.
+The code is deliberately written to avoid usage of the majority of standard C features, letting the compiler remain tiny and straightforward.
+
+-----------------------------------------------------------------------------------------------------------------------------
